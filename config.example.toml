@@ -1,0 +1,17 @@
+# Recipient locations are passed with --to, never stored here.
+# With no --to, msg writes the full input to stdout.
+timeout_seconds = 30
+# Optional with one account; choose credentials when several accounts exist.
+# default_slack_account = "work_slack"
+
+# One bot token can send to many recipients in its workspace.
+# Examples: --to 'slack:#my-channel' or --to 'slack:@dustin'
+[accounts.work_slack]
+type = "slack"
+
+[accounts.work_slack.token_secret]
+source = "keyring"
+name = "msg/work_slack/token"
+# For an environment variable, use source = "env" and name = "MSG_SLACK_TOKEN".
+# For a file, use source = "file" and replace name with:
+# path = "/absolute/path/to/slack-token"

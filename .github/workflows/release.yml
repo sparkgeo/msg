@@ -1,0 +1,162 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - 'scripts/release.py'
+      - 'scripts/test_release.py'
+      - 'packaging/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Validate release version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          version=$(python3 scripts/release.py version --tag "$RELEASE_TAG")
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+      - name: Test packaging helpers and installer
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - uses: pandoc/actions/setup@v1
+        with:
+          version: '3.7.0.2'
+      - name: Check shipped manual
+        run: make docs-check PYTHON=python3
+
+  build:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      RELEASE_TARGET: ${{ matrix.target }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
+      - name: Install Debian packaging tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes dpkg-dev
+      - name: Check and test
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+      - name: Build and package
+        run: |
+          cargo build --release --locked --target "$RELEASE_TARGET"
+          python3 scripts/release.py package --target "$RELEASE_TARGET"
+      - name: Verify archive installation
+        run: |
+          stage=$(mktemp -d)
+          tar -xzf "target/packages/msg-v$RELEASE_VERSION-$RELEASE_TARGET.tar.gz" -C "$stage"
+          "$stage/msg-v$RELEASE_VERSION-$RELEASE_TARGET/install.sh" "$stage/installed"
+          test "$("$stage/installed/bin/msg" --version)" = "msg $RELEASE_VERSION"
+          test -s "$stage/installed/share/man/man1/msg.1"
+          test -s "$stage/installed/share/doc/msg/config.example.toml"
+      - name: Verify Debian package installation
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install --yes ./target/packages/*.deb
+          test "$(/usr/bin/msg --version)" = "msg $RELEASE_VERSION"
+          test -s /usr/share/man/man1/msg.1.gz
+          sudo apt-get remove --yes msg
+          test ! -e /usr/bin/msg
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-${{ matrix.target }}
+          path: target/packages/*
+          if-no-files-found: error
+          compression-level: 0
+
+  assemble:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: target/packages
+      - name: Generate and verify checksums
+        run: |
+          python3 scripts/release.py checksums target/packages
+          cd target/packages
+          sha256sum --check SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-bundle
+          path: target/packages/*
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: assemble
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-bundle
+          path: packages
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          flags=()
+          if [[ "${RELEASE_TAG%%+*}" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" packages/* \
+            --verify-tag --generate-notes --title "msg $RELEASE_TAG" "${flags[@]}"

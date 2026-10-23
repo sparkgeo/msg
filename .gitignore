@@ -1,0 +1,18 @@
+# Cargo build output, generated website, and local documentation tools.
+/target/
+
+# Rust backup and profiling artifacts.
+*.rs.bk
+*.profraw
+*.profdata
+
+# Python bytecode from documentation tooling.
+__pycache__/
+*.py[cod]
+
+# Local editor and macOS metadata.
+*.swp
+*.swo
+.DS_Store
+
+# Keep Cargo.lock (this is an application) and man/msg.1 (shipped manual).

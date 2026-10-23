@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="$lang$">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The complete msg command manual: configuration, Slack setup, credentials, shell examples, and troubleshooting.">
+  <title>$title$</title>
+  <link rel="stylesheet" href="manual.css">
+</head>
+<body>
+  <a class="skip" href="#manual">Skip to manual</a>
+  <header class="masthead">
+    <p class="eyebrow">Command reference · v$version$</p>
+    <h1>msg manual</h1>
+    <p>Send a message from your terminal. Know exactly where it goes.</p>
+    <div class="downloads" aria-label="Downloads">
+      <a href="msg.1" download>Download man page</a>
+      <a href="config.example.toml" download>Example configuration</a>
+      <a href="manual.md" download>Markdown source</a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="contents" aria-label="Table of contents">
+      <h2>In this manual</h2>
+      $toc$
+      <p class="search-hint">Find text with Ctrl+F or ⌘F.</p>
+    </nav>
+    <main id="manual" tabindex="-1">
+      $body$
+    </main>
+  </div>
+  <footer>Also available in your terminal: <code>man msg</code>.</footer>
+</body>
+</html>
